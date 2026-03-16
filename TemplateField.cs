@@ -38,7 +38,7 @@ public class TemplateField
     /// 模板类型
     /// </summary>
     public TemplateType Type { get; set; } = TemplateType.Normal;
-    public XWPFParagraph? DocPara { get; set; }
+    public XWPFParagraph DocPara { get; set; }
     public XWPFTable? DocTable { get; set; }
     /// <summary>
     /// 是否列表
@@ -47,11 +47,11 @@ public class TemplateField
     /// <summary>
     /// 表格行位置
     /// </summary>
-    public int Row { get; set; }
+    public int Row { get; set; } = -1;
     /// <summary>
     /// 表格列位置
     /// </summary>
-    public int Col { get; set; }
+    public int Col { get; set; } = -1;
     /// <summary>
     /// 获取模板字段
     /// </summary>

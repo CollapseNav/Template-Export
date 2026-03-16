@@ -26,7 +26,7 @@ public static class TemplateExport
                 var fields = paraFields.Where(item => item.DocPara == para);
                 foreach (var field in fields)
                 {
-                    ReplaceKeyInParagraph(para, data, field.Field, TemplateType.Normal);
+                    ReplaceKeyInParagraph(para, data, field);
                 }
             }
             // 然后处理表格中的模板
@@ -35,6 +35,16 @@ public static class TemplateExport
             var tableFieldGroup = tableFields.GroupBy(item => item.Field.Split('.')[0]).ToList();
             foreach (var table in doc.Tables)
             {
+                var tableParaFields = docFields.Where(item => item.DocTable == table && item.IsList == false).ToList();
+                foreach (var field in tableParaFields)
+                {
+                    var cell = table.GetRow(field.Row).GetCell(field.Col);
+                    foreach (var para in cell.Paragraphs)
+                    {
+                        if (para == field.DocPara)
+                            ReplaceKeyInParagraph(para, data, field);
+                    }
+                }
                 // 多个列表数据
                 foreach (var fieldGroup in tableFieldGroup)
                 {
@@ -56,7 +66,7 @@ public static class TemplateExport
                                             .GetCell(field.Col + (field.Type == TemplateType.Col ? dataIndex++ : 0));
                             foreach (var para in cell.Paragraphs)
                             {
-                                ReplaceKeyInParagraph(para, obj, field.Field.Replace(fieldGroup.Key + ".", ""), field.Type);
+                                ReplaceKeyInParagraph(para, obj, field);
                             }
                         }
                     }
@@ -68,7 +78,6 @@ public static class TemplateExport
             }
         }
     }
-
     /// <summary>
     /// 模板替换
     /// </summary>
@@ -77,32 +86,12 @@ public static class TemplateExport
     /// <param name="data"></param>
     /// <param name="field"></param>
     /// <param name="type"></param>
-    private static void ReplaceKeyInParagraph<T>(XWPFParagraph para, T data, string field, TemplateType type)
+    private static void ReplaceKeyInParagraph<T>(XWPFParagraph para, T data, TemplateField field)
     {
-        var temp = string.Empty;
-        var start = para.Text.IndexOf(Config.NormalPrefix);
-        var end = para.Text.IndexOf(Config.Suffix);
-        if (start >= 0)
-            temp = para.Text.Substring(start, end - start) + Config.Suffix;
-        var tempRun = para.Runs.Count > 0 ? para.Runs.FirstOrDefault(p => p.Text.Contains(temp)) : null;
-        var value = data.GetValue(field);
-        string text;
-        if (temp.IsEmpty() && type != TemplateType.Normal)
-        {
-            text = value.ToString();
-        }
-        else if (temp.IsEmpty() && type == TemplateType.Normal)
-        {
-            return;
-        }
-        else
-        {
-            if (tempRun == null)
-                text = para.Text.Replace(temp, value.ToString());
-            else
-                text = tempRun.Text.Replace(temp, value.ToString());
-        }
-
+        var tempRun = field.DocPara.Runs.Count > 0 ? field.DocPara.Runs.FirstOrDefault(p => p.Text.Contains(field.Template)) : null;
+        var fieldText = field.IsList ? field.Field.Split('.')[1] : field.Field;
+        var value = data.GetValue(fieldText);
+        string text = tempRun != null ? tempRun.Text.Replace(field.Template, value.ToString()) : value.ToString();
         if (tempRun != null)
         {
             tempRun.SetText(text);
