@@ -39,7 +39,11 @@ public static class TemplateExport
                 {
                     var fields = GetFields(table, TemplateType.Row);
                     var listField = fields.First().Field.Split('.')[0];
-                    List<object> listData = (List<object>)data.GetValue(listField);
+                    IEnumerable<object> listData = (IEnumerable<object>)data.GetValue(listField);
+                    if (listData != null)
+                    {
+
+                    }
                     foreach (var field in fields)
                     {
                         var dataIndex = 0;
@@ -59,7 +63,7 @@ public static class TemplateExport
                 {
                     var fields = GetFields(table, TemplateType.Col);
                     var listField = fields.First().Field.Split('.')[0];
-                    List<object> listData = (List<object>)data.GetValue(listField);
+                    IEnumerable<object> listData = (IEnumerable<object>)data.GetValue(listField);
                     foreach (var field in fields)
                     {
                         var dataIndex = 0;
