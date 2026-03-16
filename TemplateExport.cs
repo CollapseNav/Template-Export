@@ -2,10 +2,6 @@ using Collapsenav.Net.Tool;
 using NPOI.XWPF.UserModel;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
-public enum TemplateType
-{
-    Normal, Row, Col
-}
 public static class TemplateExport
 {
     public static TemplateConfig Config { get; set; } = new TemplateConfig();
@@ -21,73 +17,47 @@ public static class TemplateExport
         using (FileStream fs = new FileStream(templatePath, FileMode.Open, FileAccess.Read))
         {
             XWPFDocument doc = new XWPFDocument(fs);
+            // 先拿到所有模板
+            var docFields = TemplateField.GetFields(doc, Config);
+            // 第一步先处理段落中的模板
+            var paraFields = docFields.Where(item => item.IsList == false).ToList();
             foreach (var para in doc.Paragraphs)
             {
-                if (para.Text.Contains(Config.Suffix) && para.Text.Contains(Config.NormalPrefix))
+                var fields = paraFields.Where(item => item.DocPara == para);
+                foreach (var field in fields)
                 {
-                    var fields = GetTemplateFields(para, TemplateType.Normal);
-                    foreach (var field in fields)
-                    {
-                        ReplaceKeyInParagraph(para, data, field, TemplateType.Normal);
-                    }
+                    ReplaceKeyInParagraph(para, data, field.Field, TemplateType.Normal);
                 }
             }
+            // 然后处理表格中的模板
+            var tableFields = docFields.Where(item => item.IsList == true).ToList();
+            // 考虑可能会有多个列表的情况
+            var tableFieldGroup = tableFields.GroupBy(item => item.Field.Split('.')[0]).ToList();
             foreach (var table in doc.Tables)
             {
-                // 处理表格动态行的情况
-                if (table.Text.Contains(Config.Suffix) && table.Text.Contains(Config.RowPrefix))
+                // 多个列表数据
+                foreach (var fieldGroup in tableFieldGroup)
                 {
-                    var fields = GetFields(table, TemplateType.Row);
-                    var listField = fields.First().Field.Split('.')[0];
-                    IEnumerable<object> listData = (IEnumerable<object>)data.GetValue(listField);
-                    if (listData != null)
-                    {
-
-                    }
+                    // 先获取列表数据
+                    var listData = (IEnumerable<object>?)data.GetValue(fieldGroup.Key);
+                    if (listData == null)
+                        continue;
+                    // 然后遍历模板
+                    var fields = fieldGroup.Where(item => item.DocTable == table).ToList();
                     foreach (var field in fields)
                     {
                         var dataIndex = 0;
                         foreach (var obj in listData)
                         {
-                            // 遍历一次数据，则行数+1
-                            var cell = table.GetRow(field.Row + dataIndex++).GetCell(field.Col);
+                            // 遍历一次数据，根据模板类型，获取单元格
+                            // 如果是行模式，则列数不变，行数递增
+                            // 如果是列模式，则行数不变，列数递增
+                            var cell = table.GetRow(field.Row + (field.Type == TemplateType.Row ? dataIndex++ : 0))
+                                            .GetCell(field.Col + (field.Type == TemplateType.Col ? dataIndex++ : 0));
                             foreach (var para in cell.Paragraphs)
                             {
-                                ReplaceKeyInParagraph(para, obj, field.Field.Replace(listField + ".", ""), TemplateType.Row);
+                                ReplaceKeyInParagraph(para, obj, field.Field.Replace(fieldGroup.Key + ".", ""), field.Type);
                             }
-                        }
-                    }
-                }
-                // 处理表格动态列的情况
-                if (table.Text.Contains(Config.Suffix) && table.Text.Contains(Config.ColPrefix))
-                {
-                    var fields = GetFields(table, TemplateType.Col);
-                    var listField = fields.First().Field.Split('.')[0];
-                    IEnumerable<object> listData = (IEnumerable<object>)data.GetValue(listField);
-                    foreach (var field in fields)
-                    {
-                        var dataIndex = 0;
-                        foreach (var obj in listData)
-                        {
-                            // 遍历一次数据，则列数+1
-                            var cell = table.GetRow(field.Row).GetCell(field.Col + dataIndex++);
-                            foreach (var para in cell.Paragraphs)
-                            {
-                                ReplaceKeyInParagraph(para, obj, field.Field.Replace(listField + ".", ""), TemplateType.Row);
-                            }
-                        }
-                    }
-                }
-                // 处理一般的固定单元格模板
-                if (table.Text.Contains(Config.Suffix) && table.Text.Contains(Config.NormalPrefix))
-                {
-                    var fields = GetFields(table, TemplateType.Normal);
-                    foreach (var field in fields)
-                    {
-                        var cell = table.GetRow(field.Row).GetCell(field.Col);
-                        foreach (var para in cell.Paragraphs)
-                        {
-                            ReplaceKeyInParagraph(para, data, field.Field, TemplateType.Normal);
                         }
                     }
                 }
@@ -97,126 +67,6 @@ public static class TemplateExport
                 doc.Write(outFs);
             }
         }
-    }
-
-    /// <summary>
-    /// 获取模板的字段
-    /// </summary>
-    /// <param name="para"></param>
-    /// <param name="type"></param>
-    /// <returns></returns>
-    private static string GetTemplateField(XWPFParagraph para, TemplateType type)
-    {
-        string field = string.Empty;
-        var end = para.Text.IndexOf(Config.Suffix);
-        var start = 0;
-        switch (type)
-        {
-            case TemplateType.Normal:
-                start = para.Text.IndexOf(Config.NormalPrefix);
-                field = para.Text.Substring(start + Config.NormalPrefix.Length, end - start - Config.NormalPrefix.Length);
-                break;
-            case TemplateType.Row:
-                start = para.Text.IndexOf(Config.RowPrefix);
-                field = para.Text.Substring(start + Config.RowPrefix.Length, end - start - Config.RowPrefix.Length);
-                break;
-            case TemplateType.Col:
-                start = para.Text.IndexOf(Config.ColPrefix);
-                field = para.Text.Substring(start + Config.ColPrefix.Length, end - start - Config.ColPrefix.Length);
-                break;
-        }
-        return field;
-    }
-    /// <summary>
-    /// 获取模板的字段
-    /// </summary>
-    /// <param name="para"></param>
-    /// <param name="type"></param>
-    /// <returns></returns>
-    private static List<string> GetTemplateFields(XWPFParagraph para, TemplateType type)
-    {
-        var text = para.Text;
-        List<string> fields = new List<string>();
-        switch (type)
-        {
-            case TemplateType.Normal:
-                fields = text.Split(Config.NormalPrefix).ToList();
-                break;
-            case TemplateType.Row:
-                fields = text.Split(Config.RowPrefix).ToList();
-                break;
-            case TemplateType.Col:
-                fields = text.Split(Config.ColPrefix).ToList();
-                break;
-        }
-        fields = fields.Skip(1).Select(field => field.Substring(0, field.IndexOf(Config.Suffix))).ToList();
-        return fields;
-    }
-
-    /// <summary>
-    /// 获取所有模板以及模板所在的行列信息
-    /// </summary>
-    /// <param name="table"></param>
-    /// <param name="type"></param>
-    /// <returns></returns>
-    private static List<TableField> GetFields(XWPFTable table, TemplateType type)
-    {
-        List<TableField> fields = new List<TableField>();
-        var rows = table.Rows;
-        for (var i = 0; i < rows.Count; i++)
-        {
-            var row = rows[i];
-            var cells = row.GetTableCells();
-            for (var j = 0; j < cells.Count; j++)
-            {
-                var cell = cells[j];
-                foreach (var para in cell.Paragraphs)
-                {
-                    if (!para.Text.Contains(Config.Suffix))
-                        continue;
-                    switch (type)
-                    {
-                        case TemplateType.Normal:
-                            if (para.Text.Contains(Config.NormalPrefix) && !para.Text.Contains(Config.RowPrefix) && !para.Text.Contains(Config.ColPrefix))
-                            {
-                                var fs = GetTemplateFields(para, TemplateType.Normal).Select(item => new TableField() { Field = item }).ToList();
-                                fs.ForEach(field =>
-                                {
-                                    field.Row = i;
-                                    field.Col = j;
-                                });
-                                fields.AddRange(fs);
-                            }
-                            break;
-                        case TemplateType.Row:
-                            if (para.Text.Contains(Config.RowPrefix))
-                            {
-                                var fs = GetTemplateFields(para, TemplateType.Row).Select(item => new TableField() { Field = item }).ToList();
-                                fs.ForEach(field =>
-                                {
-                                    field.Row = i;
-                                    field.Col = j;
-                                });
-                                fields.AddRange(fs);
-                            }
-                            break;
-                        case TemplateType.Col:
-                            if (para.Text.Contains(Config.ColPrefix))
-                            {
-                                var fs = GetTemplateFields(para, TemplateType.Col).Select(item => new TableField() { Field = item }).ToList();
-                                fs.ForEach(field =>
-                                {
-                                    field.Row = i;
-                                    field.Col = j;
-                                });
-                                fields.AddRange(fs);
-                            }
-                            break;
-                    }
-                }
-            }
-        }
-        return fields;
     }
 
     /// <summary>
@@ -277,6 +127,7 @@ public static class TemplateExport
             }
         }
     }
+
     /// <summary>
     /// 合并多个pdf
     /// </summary>
